@@ -4,6 +4,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { pool } from "../db";
 import { requireAuth, AuthRequest } from "../middleware/auth";
+import { embedText, toVectorLiteral } from "../embeddings";
 
 const router = Router();
 const CACHE_ENABLED = process.env.CACHE_ENABLED !== "false";
@@ -146,6 +147,50 @@ router.post("/:id/comments", async (req: AuthRequest, res) => {
     const comment = result.rows[0];
     broadcastToRoom(idCheck.data, { type: "comment", comment });
     res.status(201).json({ comment });
+  } catch (err: any) {
+    if (err.code === "23503") {
+      res.status(404).json({ error: "Room not found" });
+      return;
+    }
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+const snippetSchema = z.object({
+  title: z.string().trim().min(1).max(100),
+  language: z.string().trim().min(1).max(30),
+  code: z.string().min(1).max(20000),
+});
+
+router.post("/:id/snippets", async (req: AuthRequest, res) => {
+  const idCheck = z.string().uuid().safeParse(req.params.id);
+  const parsed = snippetSchema.safeParse(req.body);
+  if (!idCheck.success || !parsed.success) {
+    res.status(400).json({ error: "Title (1-100), language and code (max 20000 chars) required" });
+    return;
+  }
+  const { title, language, code } = parsed.data;
+
+  // 1) ask Gemini for the embedding
+  let vector: number[];
+  try {
+    vector = await embedText(`${title}\n${language}\n${code}`, "RETRIEVAL_DOCUMENT");
+  } catch (err) {
+    console.error(err);
+    res.status(502).json({ error: "Embedding service failed, try again" });
+    return;
+  }
+
+  // 2) store code + embedding together
+  try {
+    const result = await pool.query(
+      `INSERT INTO snippets (room_id, user_id, title, language, code, embedding)
+       VALUES ($1, $2, $3, $4, $5, $6::vector)
+       RETURNING id, title, language, created_at`,
+      [idCheck.data, req.userId, title, language, code, toVectorLiteral(vector)]
+    );
+    res.status(201).json({ snippet: result.rows[0] });
   } catch (err: any) {
     if (err.code === "23503") {
       res.status(404).json({ error: "Room not found" });

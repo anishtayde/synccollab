@@ -35,6 +35,7 @@ export default function Room() {
   const [commentText, setCommentText] = useState("");
   const [cursorLine, setCursorLine] = useState(1);
   const [editorReady, setEditorReady] = useState(false);
+    const [notice, setNotice] = useState("");
   const cleanupRef = useRef<(() => void) | null>(null);
   const editorRef = useRef<EditorType | null>(null);
   const decorationsRef = useRef<ReturnType<EditorType["createDecorationsCollection"]> | null>(
@@ -153,6 +154,26 @@ export default function Room() {
       setError((err as Error).message);
     }
   }
+  
+    async function saveSnippet() {
+    const code = editorRef.current?.getValue() ?? "";
+    if (!code.trim()) {
+      setNotice("Write some code first");
+      return;
+    }
+    const title = window.prompt("Snippet title?");
+    if (!title || !title.trim()) return;
+    setNotice("Saving...");
+    try {
+      await api(`/rooms/${id}/snippets`, {
+        method: "POST",
+        body: JSON.stringify({ title, language, code }),
+      });
+      setNotice("Snippet saved!");
+    } catch (err) {
+      setNotice((err as Error).message);
+    }
+  }
 
   function jumpToLine(line: number) {
     editorRef.current?.revealLineInCenter(line);
@@ -168,13 +189,17 @@ export default function Room() {
         <>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <h2>{room.name}</h2>
-            <select value={language} onChange={(e) => setLanguage(e.target.value)}>
-              {LANGUAGES.map((l) => (
-                <option key={l} value={l}>
-                  {l}
-                </option>
-              ))}
-            </select>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              {notice && <small>{notice}</small>}
+              <button onClick={saveSnippet}>Save as snippet</button>
+              <select value={language} onChange={(e) => setLanguage(e.target.value)}>
+                {LANGUAGES.map((l) => (
+                  <option key={l} value={l}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
           <p style={{ margin: "0 0 8px" }}>
             Online: {online.length === 0 ? "-" : online.join(", ")}
