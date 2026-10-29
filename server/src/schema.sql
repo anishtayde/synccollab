@@ -41,3 +41,8 @@ CREATE TABLE IF NOT EXISTS snippets (
   embedding vector(768) NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS snippets_embedding_idx
+  ON snippets USING hnsw (embedding vector_cosine_ops);
+
+CREATE INDEX IF NOT EXISTS snippets_room_idx ON snippets (room_id);

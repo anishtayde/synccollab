@@ -200,4 +200,46 @@ router.post("/:id/snippets", async (req: AuthRequest, res) => {
     res.status(500).json({ error: "Server error" });
   }
 });
+
+const searchSchema = z.object({
+  q: z.string().trim().min(1).max(300),
+  limit: z.coerce.number().int().min(1).max(20).default(5),
+});
+
+router.get("/:id/snippets/search", async (req: AuthRequest, res) => {
+  const idCheck = z.string().uuid().safeParse(req.params.id);
+  const parsed = searchSchema.safeParse(req.query);
+  if (!idCheck.success || !parsed.success) {
+    res.status(400).json({ error: "Search text (1-300 chars) required" });
+    return;
+  }
+  const { q, limit } = parsed.data;
+
+  // 1) turn the search text into a vector
+  let vector: number[];
+  try {
+    vector = await embedText(q, "RETRIEVAL_QUERY");
+  } catch (err) {
+    console.error(err);
+    res.status(502).json({ error: "Embedding service failed, try again" });
+    return;
+  }
+
+  // 2) nearest snippets in this room, closest first
+  try {
+    const result = await pool.query(
+      `SELECT id, title, language, code, created_at,
+              1 - (embedding <=> $1::vector) AS similarity
+       FROM snippets
+       WHERE room_id = $2
+       ORDER BY embedding <=> $1::vector
+       LIMIT $3`,
+      [toVectorLiteral(vector), idCheck.data, limit]
+    );
+    res.json({ results: result.rows });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
 export default router;
