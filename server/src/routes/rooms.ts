@@ -5,6 +5,8 @@ import { pool } from "../db";
 import { requireAuth, AuthRequest } from "../middleware/auth";
 
 const router = Router();
+const CACHE_ENABLED = process.env.CACHE_ENABLED !== "false";
+const ROOM_TTL_SECONDS = 60;
 router.use(requireAuth);
 
 const createSchema = z.object({
@@ -48,7 +50,19 @@ router.get("/:id", async (req: AuthRequest, res) => {
     res.status(400).json({ error: "Invalid room id" });
     return;
   }
+  const key = `room:${idCheck.data}`;
   try {
+    // 1. try the cache first
+    if (CACHE_ENABLED) {
+      const cached = await redis.get(key);
+      if (cached) {
+        res.setHeader("X-Cache", "HIT");
+        res.json({ room: JSON.parse(cached) });
+        return;
+      }
+    }
+
+    // 2. cache miss: read Postgres
     const result = await pool.query(
       "SELECT id, name, owner_id, created_at FROM rooms WHERE id = $1",
       [idCheck.data]
@@ -57,7 +71,14 @@ router.get("/:id", async (req: AuthRequest, res) => {
       res.status(404).json({ error: "Room not found" });
       return;
     }
-    res.json({ room: result.rows[0] });
+    const room = result.rows[0];
+
+    // 3. save it in Redis for next time (expires after 60 seconds)
+    if (CACHE_ENABLED) {
+      await redis.set(key, JSON.stringify(room), "EX", ROOM_TTL_SECONDS);
+    }
+    res.setHeader("X-Cache", "MISS");
+    res.json({ room });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Server error" });
