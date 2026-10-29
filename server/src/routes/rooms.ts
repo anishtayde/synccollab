@@ -5,6 +5,7 @@ import { z } from "zod";
 import { pool } from "../db";
 import { requireAuth, AuthRequest } from "../middleware/auth";
 import { embedText, toVectorLiteral } from "../embeddings";
+import { parseDiff } from "../diff";
 
 const router = Router();
 const CACHE_ENABLED = process.env.CACHE_ENABLED !== "false";
@@ -241,5 +242,31 @@ router.get("/:id/snippets/search", async (req: AuthRequest, res) => {
     console.error(err);
     res.status(500).json({ error: "Server error" });
   }
+});
+
+const parseDiffSchema = z.object({
+  diff: z.string().min(1).max(200000),
+});
+
+router.post("/:id/review/parse", (req: AuthRequest, res) => {
+  const idCheck = z.string().uuid().safeParse(req.params.id);
+  const parsed = parseDiffSchema.safeParse(req.body);
+  if (!idCheck.success || !parsed.success) {
+    res.status(400).json({ error: "Diff text required (max 200000 characters)" });
+    return;
+  }
+
+  const files = parseDiff(parsed.data.diff);
+  if (files.length === 0) {
+    res.status(422).json({ error: "No changes found. Paste the output of `git diff`." });
+    return;
+  }
+
+  const summary = {
+    files: files.length,
+    additions: files.reduce((n, f) => n + f.additions, 0),
+    deletions: files.reduce((n, f) => n + f.deletions, 0),
+  };
+  res.json({ files, summary });
 });
 export default router;

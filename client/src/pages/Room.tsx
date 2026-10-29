@@ -7,6 +7,7 @@ import { MonacoBinding } from "y-monaco";
 import { api, clearToken, getToken } from "../api";
 import { SocketProvider } from "../SocketProvider";
 import { COLORS, watchCursorStyles } from "../cursors";
+import DiffReview from "../DiffReview";
 
 interface RoomData {
   id: string;
@@ -248,6 +249,7 @@ export default function Room() {
           <p style={{ margin: "0 0 8px" }}>
             Online: {online.length === 0 ? "-" : online.join(", ")}
           </p>
+          <DiffReview roomId={id!} />
           <div style={{ display: "flex", gap: 12 }}>
             <div style={{ flex: 1 }}>
               <Editor
