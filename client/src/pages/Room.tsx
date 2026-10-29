@@ -20,6 +20,13 @@ interface CommentItem {
   author: string;
   created_at: string;
 }
+interface SnippetResult {
+  id: string;
+  title: string;
+  language: string;
+  code: string;
+  similarity: number;
+}
 
 type EditorType = Parameters<OnMount>[0];
 
@@ -35,7 +42,10 @@ export default function Room() {
   const [commentText, setCommentText] = useState("");
   const [cursorLine, setCursorLine] = useState(1);
   const [editorReady, setEditorReady] = useState(false);
-    const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState("");
+  const [searchText, setSearchText] = useState("");
+  const [results, setResults] = useState<SnippetResult[] | null>(null);
+  const [searching, setSearching] = useState(false);
   const cleanupRef = useRef<(() => void) | null>(null);
   const editorRef = useRef<EditorType | null>(null);
   const decorationsRef = useRef<ReturnType<EditorType["createDecorationsCollection"]> | null>(
@@ -174,7 +184,41 @@ export default function Room() {
       setNotice((err as Error).message);
     }
   }
+    async function runSearch(e: React.FormEvent) {
+    e.preventDefault();
+    if (!searchText.trim()) return;
+    setSearching(true);
+    setNotice("");
+    try {
+      const data = await api(`/rooms/${id}/snippets/search?q=${encodeURIComponent(searchText)}`);
+      setResults(data.results);
+    } catch (err) {
+      setNotice((err as Error).message);
+    } finally {
+      setSearching(false);
+    }
+  }
 
+  // put a snippet's code into the editor at the cursor
+  function insertSnippet(code: string) {
+    const editor = editorRef.current;
+    const pos = editor?.getPosition();
+    if (!editor || !pos) return;
+    editor.executeEdits("snippet-insert", [
+      {
+        range: {
+          startLineNumber: pos.lineNumber,
+          startColumn: pos.column,
+          endLineNumber: pos.lineNumber,
+          endColumn: pos.column,
+        },
+        text: code + "\n",
+      },
+    ]);
+    editor.focus();
+  }
+  
+  
   function jumpToLine(line: number) {
     editorRef.current?.revealLineInCenter(line);
     editorRef.current?.setPosition({ lineNumber: line, column: 1 });
@@ -216,6 +260,56 @@ export default function Room() {
               />
             </div>
             <div style={{ width: 300, display: "flex", flexDirection: "column" }}>
+                            <h3 style={{ margin: "0 0 8px" }}>Search snippets</h3>
+              <form onSubmit={runSearch} style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                <input
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
+                  placeholder="e.g. check user credentials"
+                  maxLength={300}
+                  style={{ flex: 1, padding: 6 }}
+                />
+                <button type="submit" disabled={searching}>
+                  {searching ? "..." : "Search"}
+                </button>
+              </form>
+              {results && (
+                <div style={{ maxHeight: 220, overflowY: "auto", marginBottom: 12 }}>
+                  {results.length === 0 && <p>No snippets saved in this room yet.</p>}
+                  {results.map((r) => (
+                    <div
+                      key={r.id}
+                      style={{
+                        border: "1px solid #ddd",
+                        borderRadius: 6,
+                        padding: 8,
+                        marginBottom: 8,
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <strong>{r.title}</strong>
+                        <small>{Math.round(r.similarity * 100)}% match</small>
+                      </div>
+                      <small>{r.language}</small>
+                      <pre
+                        style={{
+                          margin: "6px 0",
+                          maxHeight: 70,
+                          overflow: "hidden",
+                          fontSize: 12,
+                          background: "#f4f4f4",
+                          padding: 6,
+                        }}
+                      >
+                        {r.code}
+                      </pre>
+                      <button onClick={() => insertSnippet(r.code)} style={{ width: "100%" }}>
+                        Insert at cursor
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
               <h3 style={{ margin: "0 0 8px" }}>Comments</h3>
               <div style={{ flex: 1, overflowY: "auto", maxHeight: "50vh" }}>
                 {comments.length === 0 && <p>No comments yet.</p>}
