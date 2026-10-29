@@ -1,7 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import Editor from "@monaco-editor/react";
-import { api, clearToken } from "../api";
+import Editor, { type OnMount } from "@monaco-editor/react";
+import * as Y from "yjs";
+import { MonacoBinding } from "y-monaco";
+import { api, clearToken, getToken } from "../api";
+import { SocketProvider } from "../SocketProvider";
 
 interface RoomData {
   id: string;
@@ -15,7 +18,7 @@ export default function Room() {
   const [room, setRoom] = useState<RoomData | null>(null);
   const [error, setError] = useState("");
   const [language, setLanguage] = useState("typescript");
-  const [code, setCode] = useState("// Start typing here\n");
+  const cleanupRef = useRef<(() => void) | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -30,6 +33,32 @@ export default function Room() {
         }
       });
   }, [id, navigate]);
+
+  // disconnect when leaving the page
+  useEffect(() => {
+    return () => cleanupRef.current?.();
+  }, []);
+
+  const handleMount: OnMount = (editor) => {
+    cleanupRef.current?.(); // safety: never keep two connections
+
+    const doc = new Y.Doc();
+    const provider = new SocketProvider(
+      `ws://localhost:4000/ws?room=${id}&token=${getToken()}`,
+      doc
+    );
+    const binding = new MonacoBinding(
+      doc.getText("code"),
+      editor.getModel()!,
+      new Set([editor])
+    );
+
+    cleanupRef.current = () => {
+      binding.destroy();
+      provider.destroy();
+      doc.destroy();
+    };
+  };
 
   return (
     <div style={{ maxWidth: 1000, margin: "30px auto", fontFamily: "sans-serif" }}>
@@ -51,8 +80,8 @@ export default function Room() {
             height="65vh"
             theme="vs-dark"
             language={language}
-            value={code}
-            onChange={(value) => setCode(value ?? "")}
+            defaultValue=""
+            onMount={handleMount}
             options={{ fontSize: 14, minimap: { enabled: false } }}
           />
         </>
