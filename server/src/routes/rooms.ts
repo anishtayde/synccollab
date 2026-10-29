@@ -1,3 +1,4 @@
+import { redis } from "../redis";
 import { Router } from "express";
 import { z } from "zod";
 import { pool } from "../db";
@@ -62,5 +63,18 @@ router.get("/:id", async (req: AuthRequest, res) => {
     res.status(500).json({ error: "Server error" });
   }
 });
-
+router.get("/:id/presence", async (req: AuthRequest, res) => {
+  const idCheck = z.string().uuid().safeParse(req.params.id);
+  if (!idCheck.success) {
+    res.status(400).json({ error: "Invalid room id" });
+    return;
+  }
+  try {
+    const online = await redis.hkeys(`presence:${idCheck.data}`);
+    res.json({ online });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
 export default router;

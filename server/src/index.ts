@@ -6,6 +6,7 @@ import dotenv from "dotenv";
 import { pool } from "./db";
 import authRouter from "./routes/auth";
 import roomsRouter from "./routes/rooms";
+import { redis } from "./redis";
 
 dotenv.config();
 
@@ -28,7 +29,11 @@ app.get("/health/db", async (_req, res) => {
     res.status(500).json({ status: "error" });
   }
 });
-
+async function clearPresence() {
+  const keys = await redis.keys("presence:*");
+  if (keys.length > 0) await redis.del(...keys);
+}
+clearPresence().catch((err) => console.error(err));
 const PORT = process.env.PORT || 4000;
 const server = http.createServer(app);
 setupWebSocket(server);

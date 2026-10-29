@@ -20,6 +20,7 @@ export default function Room() {
   const [room, setRoom] = useState<RoomData | null>(null);
   const [error, setError] = useState("");
   const [language, setLanguage] = useState("typescript");
+  const [online, setOnline] = useState<string[]>([]);
   const cleanupRef = useRef<(() => void) | null>(null);
   const navigate = useNavigate();
 
@@ -39,6 +40,15 @@ export default function Room() {
   useEffect(() => {
     return () => cleanupRef.current?.();
   }, []);
+  useEffect(() => {
+    const load = () =>
+      api(`/rooms/${id}/presence`)
+        .then((d) => setOnline(d.online))
+        .catch(() => {});
+    load();
+    const timer = setInterval(load, 3000);
+    return () => clearInterval(timer);
+  }, [id]);
 
   const handleMount: OnMount = (editor) => {
     cleanupRef.current?.();
@@ -94,6 +104,9 @@ export default function Room() {
               ))}
             </select>
           </div>
+                    <p style={{ margin: "0 0 8px" }}>
+            Online: {online.length === 0 ? "-" : online.join(", ")}
+          </p>
           <Editor
             height="65vh"
             theme="vs-dark"
