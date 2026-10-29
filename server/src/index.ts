@@ -1,3 +1,5 @@
+import http from "http";
+import { setupWebSocket } from "./ws";
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -28,6 +30,8 @@ app.get("/health/db", async (_req, res) => {
 });
 
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => {
+const server = http.createServer(app);
+setupWebSocket(server);
+server.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
