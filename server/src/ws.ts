@@ -15,6 +15,14 @@ const SAVE_DELAY_MS = 2000;
 // roomId -> set of connected sockets (used to forward messages)
 const rooms = new Map<string, Set<WebSocket>>();
 
+// send a JSON message to everyone connected to a room
+export function broadcastToRoom(roomId: string, payload: unknown) {
+  const msg = JSON.stringify(payload);
+  for (const client of rooms.get(roomId) ?? []) {
+    if (client.readyState === WebSocket.OPEN) client.send(msg);
+  }
+}
+
 // roomId -> the server's own copy of the Yjs document
 interface RoomDoc {
   doc: Y.Doc;

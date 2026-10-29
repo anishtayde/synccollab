@@ -1,3 +1,4 @@
+import { broadcastToRoom } from "../ws";
 import { redis } from "../redis";
 import { Router } from "express";
 import { z } from "zod";
@@ -94,6 +95,62 @@ router.get("/:id/presence", async (req: AuthRequest, res) => {
     const online = await redis.hkeys(`presence:${idCheck.data}`);
     res.json({ online });
   } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+const commentSchema = z.object({
+  line: z.number().int().min(1),
+  body: z.string().trim().min(1).max(500),
+});
+
+router.get("/:id/comments", async (req: AuthRequest, res) => {
+  const idCheck = z.string().uuid().safeParse(req.params.id);
+  if (!idCheck.success) {
+    res.status(400).json({ error: "Invalid room id" });
+    return;
+  }
+  try {
+    const result = await pool.query(
+      `SELECT c.id, c.line, c.body, c.created_at, u.email AS author
+       FROM comments c JOIN users u ON u.id = c.user_id
+       WHERE c.room_id = $1 ORDER BY c.created_at`,
+      [idCheck.data]
+    );
+    res.json({ comments: result.rows });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+router.post("/:id/comments", async (req: AuthRequest, res) => {
+  const idCheck = z.string().uuid().safeParse(req.params.id);
+  const parsed = commentSchema.safeParse(req.body);
+  if (!idCheck.success || !parsed.success) {
+    res.status(400).json({ error: "Line number and comment (1-500 chars) required" });
+    return;
+  }
+  try {
+    const result = await pool.query(
+      `WITH ins AS (
+         INSERT INTO comments (room_id, user_id, line, body)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, user_id, line, body, created_at
+       )
+       SELECT ins.id, ins.line, ins.body, ins.created_at, u.email AS author
+       FROM ins JOIN users u ON u.id = ins.user_id`,
+      [idCheck.data, req.userId, parsed.data.line, parsed.data.body]
+    );
+    const comment = result.rows[0];
+    broadcastToRoom(idCheck.data, { type: "comment", comment });
+    res.status(201).json({ comment });
+  } catch (err: any) {
+    if (err.code === "23503") {
+      res.status(404).json({ error: "Room not found" });
+      return;
+    }
     console.error(err);
     res.status(500).json({ error: "Server error" });
   }
